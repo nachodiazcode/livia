@@ -4,21 +4,28 @@ import LiviaCore
 
 @main
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
-    private var eventMonitor: Any?
+    private var window: NSWindow!
     private var timer: Timer?
     
     let viewModel = LiviaViewModel()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Ejecutar como accesorio (sin icono en el Dock, solo en la barra de menús)
-        NSApp.setActivationPolicy(.accessory)
+        // Ejecutar como aplicación visible regular con acceso a barra de menú
+        NSApp.setActivationPolicy(.regular)
         
         setupStatusItem()
-        setupPopover()
+        setupWindow()
         setupBackgroundMonitoring()
+        
+        // Levantar la ventana inmediatamente al abrir en primer plano
+        showWindow()
+    }
+    
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showWindow()
+        return true
     }
     
     // MARK: - Status Bar Item
@@ -28,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         if let button = statusItem.button {
             updateMenuBarButton(button: button)
-            button.action = #selector(togglePopover(_:))
+            button.action = #selector(toggleWindow(_:))
             button.target = self
         }
     }
@@ -37,7 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let snapshot = viewModel.snapshot
         let pct = Int(snapshot.usedPercentage)
         
-        // Icono nativo de SF Symbols o indicador
         let symbolName: String
         if snapshot.usedPercentage > 85 {
             symbolName = "flame.fill"
@@ -58,30 +64,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.toolTip = "Livia - RAM: \(pct)% Usada (\(snapshot.formattedAvailable) disponible)"
     }
     
-    // MARK: - Popover Setup
+    // MARK: - Window Setup
     
-    private func setupPopover() {
-        let popover = NSPopover()
-        popover.contentSize = NSSize(width: 360, height: 520)
-        popover.behavior = .transient
-        popover.animates = true
+    private func setupWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 530),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.title = "Livia"
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.level = .floating
+        window.isReleasedWhenClosed = false
+        window.delegate = self
         
         let contentView = ContentView(viewModel: viewModel)
-        popover.contentViewController = NSHostingController(rootView: contentView)
-        self.popover = popover
+        window.contentView = NSHostingView(rootView: contentView)
+        self.window = window
     }
     
-    @objc func togglePopover(_ sender: AnyObject?) {
-        guard let button = statusItem.button else { return }
-        
-        if popover.isShown {
-            popover.performClose(sender)
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Al hacer clic en la X roja, ocultar la ventana pero continuar corriendo en segundo plano
+        window.orderOut(nil)
+        return false
+    }
+    
+    @objc func toggleWindow(_ sender: AnyObject?) {
+        if window.isVisible {
+            window.orderOut(nil)
         } else {
-            // Actualizar datos al abrir
-            viewModel.refresh()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            showWindow()
         }
+    }
+    
+    func showWindow() {
+        viewModel.refresh()
+        if !window.isVisible {
+            window.center()
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     // MARK: - Background Monitoring & Auto-Clean
